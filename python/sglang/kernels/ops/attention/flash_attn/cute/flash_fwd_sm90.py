@@ -66,10 +66,13 @@ class FlashAttentionForwardSm90(FlashAttentionForwardBase):
         has_bias: bool = False,
         bias_block_size: int = 128,
         rel_extent_padded: int = 128,
+        softmax_impl: type[Softmax] | None = None,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self.intra_wg_overlap = intra_wg_overlap
+        self.has_custom_softmax = softmax_impl is not None
+        self.softmax_impl = Softmax if softmax_impl is None else softmax_impl
         self.mma_pv_is_rs = mma_pv_is_rs
         self.buffer_align_bytes = 1024
         self.use_tma_KV = not paged_kv_non_tma
@@ -1088,7 +1091,10 @@ class FlashAttentionForwardSm90(FlashAttentionForwardBase):
                     # consumer skips this tile symmetrically, so the K/V pipelines stay
                     # balanced.
                     load_kv = True
-                    if const_expr(self.is_split_kv):
+                    if const_expr(
+                        self.is_split_kv
+                        or (self.has_custom_softmax and not self.use_tma_KV)
+                    ):
                         load_kv = n_block_min < n_block_max
                     if load_kv:
                         # Clamp n_block to 0 when n_block_max == 0 (can happen with causal
@@ -1429,7 +1435,7 @@ class FlashAttentionForwardSm90(FlashAttentionForwardBase):
 
         tile_scheduler = TileSchedulerCls()
         work_tile = tile_scheduler.initial_work_tile_info()
-        softmax = Softmax.create(
+        softmax = self.softmax_impl.create(
             softmax_scale_log2,
             num_rows=acc_O.shape[0][0] * acc_O.shape[1],
             softmax_scale=softmax_scale,
@@ -1563,7 +1569,10 @@ class FlashAttentionForwardSm90(FlashAttentionForwardBase):
             # softmax.reset()  # Don't need reset as we explicitly call softmax w is_first=True
             O_should_accumulate = False
             has_work = True
-            if const_expr(self.is_split_kv):
+            if const_expr(
+                self.is_split_kv
+                or (self.has_custom_softmax and not self.use_tma_KV)
+            ):
                 has_work = n_block_min < n_block_max
 
             # ==========================================

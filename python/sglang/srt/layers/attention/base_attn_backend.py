@@ -229,6 +229,14 @@ class AttentionBackend(ABC):
         """Get the fill value for padded seq lens. Typically, it is 0 or 1."""
         raise NotImplementedError()
 
+    def can_run_decode_cuda_graph(self, forward_batch: ForwardBatch) -> bool:
+        """Whether this batch can use a captured decode forward.
+
+        Stateful backends may require an eager step at architectural state
+        boundaries even when the batch size has a captured graph.
+        """
+        return True
+
     def on_after_cuda_graph_warmup(self):
         """Hook between cuda graph warmup pass and the actual capture.
 

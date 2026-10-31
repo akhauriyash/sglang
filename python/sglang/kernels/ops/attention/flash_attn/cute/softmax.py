@@ -123,6 +123,23 @@ class Softmax(ParamsBase):
     ) -> Float32:
         return utils.fadd_reduce(acc_S_row_exp, init_val, arch=self.arch)
 
+    def _update_row_sum(
+        self,
+        acc_S_row_exp: cute.TensorSSA,
+        prior_sum: Float32 | None = None,
+        scale: Float32 | None = None,
+    ) -> Float32:
+        # Keep the operands separate for implementations that require a fused
+        # rescale/first-add operation. The default retains its existing reduction.
+        init_val = prior_sum * scale if prior_sum is not None else None
+        return self._compute_row_sum(acc_S_row_exp, init_val=init_val)
+
+    def _finalize_row_sum(self, row_sum: cute.TensorSSA) -> cute.TensorSSA:
+        return utils.warp_reduce(row_sum, operator.add, width=4)
+
+    def _reciprocal(self, value: Float32) -> Float32:
+        return cute.arch.rcp_approx(value)
+
     @cute.jit
     def online_softmax(
         self,
@@ -169,9 +186,7 @@ class Softmax(ParamsBase):
                 acc_S_row_exp = cute.math.exp2(
                     acc_S_row * scale_log2 - row_max_cur_scaled, fastmath=True
                 )
-                acc_S_row_sum = utils.fadd_reduce(
-                    acc_S_row_exp, init_val=None, arch=arch
-                )
+                acc_S_row_sum = self._update_row_sum(acc_S_row_exp)
                 row_scale[r] = 1.0
             else:
                 row_max_cur_scaled = row_max_cur * scale_log2
@@ -182,8 +197,8 @@ class Softmax(ParamsBase):
                 row_scale[r] = cute.math.exp2(
                     (row_max_prev - row_max_cur) * scale_log2, fastmath=True
                 )
-                acc_S_row_sum = utils.fadd_reduce(
-                    acc_S_row_exp, init_val=row_sum[r] * row_scale[r], arch=arch
+                acc_S_row_sum = self._update_row_sum(
+                    acc_S_row_exp, prior_sum=row_sum[r], scale=row_scale[r]
                 )
 
             row_sum[r] = acc_S_row_sum
@@ -205,7 +220,7 @@ class Softmax(ParamsBase):
         scale_log2 = self.scale_log2
 
         # quad reduction for row_sum as we didn't do it during each iteration of online softmax
-        row_sum.store(utils.warp_reduce(row_sum.load(), operator.add, width=4))
+        row_sum.store(self._finalize_row_sum(row_sum.load()))
         row_scale = cute.make_fragment_like(row_max, Float32)
 
         for r in cutlass.range(cute.size(row_sum), unroll_full=True):
@@ -227,7 +242,7 @@ class Softmax(ParamsBase):
             # if row_sum is zero or nan, set acc_O_mn_row to 1.0
             acc_O_mn_row_is_zero_or_nan = row_sum[r] == 0.0 or row_sum[r] != row_sum[r]
             row_scale[r] = (
-                cute.arch.rcp_approx(
+                self._reciprocal(
                     row_sum[r] if not acc_O_mn_row_is_zero_or_nan else 1.0
                 )
             ) * final_scale

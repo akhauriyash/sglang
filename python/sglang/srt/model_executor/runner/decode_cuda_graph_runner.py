@@ -642,6 +642,8 @@ class DecodeCudaGraphRunner(BaseCudaGraphRunner):
         return max(request_counts)
 
     def can_run_graph(self, forward_batch: ForwardBatch):
+        if not self.attn_backend.can_run_decode_cuda_graph(forward_batch):
+            return False
         # Disable for token embedding overrides (dynamic per-request)
         if forward_batch.replace_embeds is not None:
             return False

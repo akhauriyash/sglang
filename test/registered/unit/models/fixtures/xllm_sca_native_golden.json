@@ -1,0 +1,124 @@
+{
+  "format_version": 1,
+  "inputs": {
+    "k": {
+      "dtype": "torch.bfloat16",
+      "sha256": "cd3a4236f469a4bf286b3754892411d24d5bc6c7c5b877832bcf31b8b5f7d836",
+      "shape": [
+        257,
+        8,
+        64
+      ]
+    },
+    "q": {
+      "dtype": "torch.bfloat16",
+      "sha256": "5484b5dac197d31aadb96113d2b86d7a39bcb23fa7c4b09b14a4697b8781954f",
+      "shape": [
+        257,
+        32,
+        64
+      ]
+    },
+    "v": {
+      "dtype": "torch.bfloat16",
+      "sha256": "b332ec8cb1668cd7b7863e71dc919707a9cec53b31d4b014a0a64af65b8c44da",
+      "shape": [
+        257,
+        8,
+        64
+      ]
+    }
+  },
+  "operator": "xattn.ops.flash_sca_fwd",
+  "outputs": {
+    "suffix1": {
+      "dtype": "torch.bfloat16",
+      "sample_indices": [
+        0,
+        1024,
+        2047
+      ],
+      "samples": {
+        "0": -0.005340576171875,
+        "1024": 0.0022430419921875,
+        "2047": -0.003936767578125
+      },
+      "sha256": "8f80cb0ae6348e0a91e8cd8d7f75d35632531768570d692622dc40af9bac8b52",
+      "shape": [
+        1,
+        32,
+        64
+      ]
+    },
+    "suffix31": {
+      "dtype": "torch.bfloat16",
+      "sample_indices": [
+        0,
+        31744,
+        63487
+      ],
+      "samples": {
+        "0": -0.01275634765625,
+        "31744": 0.01104736328125,
+        "63487": -0.003936767578125
+      },
+      "sha256": "4213e737027ae7b838cd61c861cf38e8ab77cf00188984a9c8b5feff714c6940",
+      "shape": [
+        31,
+        32,
+        64
+      ]
+    },
+    "whole": {
+      "dtype": "torch.bfloat16",
+      "sample_indices": [
+        0,
+        63488,
+        263168,
+        522240,
+        524288,
+        526335
+      ],
+      "samples": {
+        "0": -0.984375,
+        "263168": -0.000675201416015625,
+        "522240": -0.00165557861328125,
+        "524288": -0.005340576171875,
+        "526335": -0.003936767578125,
+        "63488": -0.0810546875
+      },
+      "sha256": "1efdd5d9c25e56ae4923b926a2d33f3c0ee3a7f5f4a5cf7b883dea32e4923f8e",
+      "shape": [
+        257,
+        32,
+        64
+      ]
+    }
+  },
+  "parameters": {
+    "chunk_size": 4096,
+    "softmax_scale": 0.125
+  },
+  "provenance": {
+    "compute_capability": [
+      9,
+      0
+    ],
+    "cuda": "12.8",
+    "expectations": "Unchanged native xattn; no production port or checkpoint data",
+    "gpu": "NVIDIA H200",
+    "installed_native_wrapper_sha256": "27d4269564d26888d86f803bf8d717ac0cb9406077917389001306ff93f7641e",
+    "native_extension_sha256": "8bb248919c215d719585880ed7deafd3b6d6785ac0c3ecaf1b4e1d5505184897",
+    "native_repository_revision": "98ce126bd93a37fe7a7860ae337806ba1d6ffc46",
+    "native_source_sha256": {
+      "csrc/attention/cuda/softmax.h": "89b93170eaf1696e98e5e441aa5139a9d0efb400ca592b4dc2f8851a325cc2d9",
+      "csrc/flash_sca/hopper/sliding_chunk_attention.cu": "00d63679c19026c9429e37fc5ef805302bc7b7b9a852b0bd9d2e416089ba623e",
+      "csrc/flash_sca/hopper/src/mainloop_fwd_sm90_tma_gmma_ws.hpp": "a50d1b08596dda40d236b263dfcb6bdb091c999096548577fb5c31f3f8b25f3d"
+    },
+    "short_vs_padded4096_prefix_bitwise_equal": true,
+    "suffixes": "Rows selected from the same native 257-token causal output",
+    "torch": "2.11.0+cu128"
+  },
+  "recipe_version": 1,
+  "scope": "Finite SM90 BF16; 257 tokens, 32 query heads, 8 KV heads, 64 channels"
+}

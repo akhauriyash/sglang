@@ -1,8 +1,10 @@
 # Copyright (c) 2025, Jay Shah, Ganesh Bikshandi, Ying Zhang, Vijay Thakkar, Pradeep Ramani, Tri Dao.
+import hashlib
+import inspect
 import math
 import os
 from dataclasses import dataclass
-from functools import lru_cache
+from functools import cache, lru_cache
 from typing import Callable, Optional, Tuple
 
 import cutlass
@@ -64,6 +66,7 @@ from sglang.kernels.ops.attention.flash_attn.cute.flash_fwd_sm100 import (
     FlashAttentionForwardSm100,
 )
 from sglang.kernels.ops.attention.flash_attn.cute.shearing_bias import ShearingBias
+from sglang.kernels.ops.attention.flash_attn.cute.softmax import Softmax
 
 # SM100 head_dim=256 2CTA kernel imports
 from sglang.kernels.ops.attention.flash_attn.cute.sm100_hd256_2cta_fmha_forward import (
@@ -307,6 +310,88 @@ def _group_tile_bias(qhead_per_kvhead_packgqa=1):
     return 128
 
 
+@cache
+def _softmax_impl_cache_key(softmax_impl: type[Softmax]) -> tuple[str, str, str]:
+    """Include custom source outside the vendored directory in the AOT key.
+
+    Implementations are static, module-level classes for the process lifetime.
+    Their arithmetic helpers must live in the same source file so its digest
+    covers the implementation as well as its factory.
+    """
+    if not isinstance(softmax_impl, type) or not issubclass(softmax_impl, Softmax):
+        raise TypeError("softmax_impl must be a module-level Softmax subclass")
+    if "<locals>" in softmax_impl.__qualname__:
+        raise TypeError("softmax_impl must be a module-level Softmax subclass")
+    source_path = inspect.getsourcefile(softmax_impl)
+    if source_path is None:
+        raise ValueError("softmax_impl must have a readable Python source file")
+    with open(source_path, "rb") as source:
+        source_hash = hashlib.sha256(source.read()).hexdigest()
+    return softmax_impl.__module__, softmax_impl.__qualname__, source_hash
+
+
+def _validate_custom_softmax(
+    q, k, v, *, arch, causal, num_splits, return_lse, unsupported
+):
+    """Limit arithmetic customization to the independently tested SM90 path."""
+    if arch // 10 != 9:
+        raise ValueError("Custom softmax requires SM90")
+    if any(t is None for t in (q, k, v)) or any(
+        not t.is_cuda or t.dtype != torch.bfloat16 for t in (q, k, v)
+    ):
+        raise ValueError("Custom softmax requires CUDA BF16 Q/K/V tensors")
+    if any(t.shape[-1] != 64 for t in (q, k, v)):
+        raise ValueError("Custom softmax supports head dimensions 64 only")
+    if any(t.requires_grad for t in (q, k, v)):
+        raise ValueError("Custom softmax supports forward-only inference")
+    if not causal or num_splits != 1 or return_lse:
+        raise ValueError(
+            "Custom softmax requires causal attention, one split, and no LSE"
+        )
+    if unsupported:
+        raise ValueError(
+            f"Unsupported custom softmax features: {', '.join(unsupported)}"
+        )
+
+
+def _validate_custom_softmax_paged_decode(q, k, v, page_table, seqused_k):
+    """Qualify only single-query, single-page SM90 custom-softmax decode.
+
+    A page is one fixed-capacity request slot. Device lengths bound the live
+    prefix, including empty padded requests. This is not a general extension
+    of custom softmax to arbitrary paging or variable-length query layouts.
+    """
+    if (
+        page_table is None
+        or seqused_k is None
+        or q is None
+        or k is None
+        or v is None
+        or q.ndim != 4
+        or q.shape[1] != 1
+        or k.ndim != 4
+        or k.shape != v.shape
+        or k.shape[1] < 256
+        or k.shape[1] % 128
+    ):
+        raise ValueError(
+            "Custom softmax paging requires one query, one page per request, "
+            "and a page capacity of at least 256 divisible by 128"
+        )
+    if (
+        page_table.shape != (q.shape[0], 1)
+        or seqused_k.shape != (q.shape[0],)
+        or any(
+            value.dtype != torch.int32 or value.device != q.device or not value.is_contiguous()
+            for value in (page_table, seqused_k)
+        )
+    ):
+        raise ValueError(
+            "Custom softmax paging requires contiguous CUDA int32 page_table[B,1] "
+            "and seqused_k[B] on the query device"
+        )
+
+
 def _flash_attn_fwd(
     q: Optional[torch.Tensor],
     k: Optional[torch.Tensor],
@@ -352,6 +437,8 @@ def _flash_attn_fwd(
     qk_sf_vec_size: Optional[int] = None,
     v_sf_vec_size: Optional[int] = None,
     rel_bias_prep_cache: Optional[dict] = None,
+    *,
+    softmax_impl: type[Softmax] | None = None,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Forward pass for FlashAttention.
 
@@ -366,10 +453,65 @@ def _flash_attn_fwd(
         lse: Optional pre-allocated log-sum-exp tensor. If None, will be allocated when needed.
         aux_tensors: Some score_mods will want to read from global aux_tensors. This is how we thread them through to the inner kernel.
         aux_scalars: Runtime scalar captures used by score_mod or mask_mod.
+        softmax_impl: Internal SM90 inference customization. The default preserves
+            the ordinary softmax implementation and its compilation key.
     """
     fake_mode = is_fake_mode()
     arch = _get_device_arch() if _arch is None else _arch
-    arch_forward_host = get_forward_host(arch)
+    softmax_key = None
+    if softmax_impl is not None:
+        unsupported = {
+            "qv": qv,
+            "seqused_q": seqused_q,
+            "min_seqlen_k": min_seqlen_k,
+            "learnable_sink": learnable_sink,
+            "tile_mn": tile_mn,
+            "mma_pv_is_rs": mma_pv_is_rs,
+            "intra_wg_overlap": intra_wg_overlap,
+            "score_mod": score_mod,
+            "mask_mod": mask_mod,
+            "block_sparse_tensors": block_sparse_tensors,
+            "lse": lse,
+            "aux_tensors": aux_tensors,
+            "aux_scalars": aux_scalars,
+            "q_descale": q_descale,
+            "k_descale": k_descale,
+            "v_descale": v_descale,
+            "gather_kv_indices": gather_kv_indices,
+            "rel_bias": rel_bias,
+            "sfq": sfq,
+            "sfk": sfk,
+            "sfv": sfv,
+            "qk_sf_vec_size": qk_sf_vec_size,
+            "v_sf_vec_size": v_sf_vec_size,
+            "rel_bias_prep_cache": rel_bias_prep_cache,
+        }
+        if page_table is not None or seqused_k is not None:
+            _validate_custom_softmax_paged_decode(q, k, v, page_table, seqused_k)
+            unsupported["cu_seqlens_q"] = cu_seqlens_q
+            unsupported["cu_seqlens_k"] = cu_seqlens_k
+        unsupported = [
+            name for name, value in unsupported.items() if value is not None
+        ]
+        if softcap not in (None, 0.0):
+            unsupported.append("softcap")
+        if window_size_left not in (None, -1) or window_size_right not in (None, -1):
+            unsupported.append("window_size")
+        if num_threads != 384:
+            unsupported.append("num_threads")
+        _validate_custom_softmax(
+            q,
+            k,
+            v,
+            arch=arch,
+            causal=causal,
+            num_splits=num_splits,
+            return_lse=return_lse,
+            unsupported=unsupported,
+        )
+        softmax_key = _softmax_impl_cache_key(softmax_impl)
+    # Architecture host caches do not encode arbitrary softmax implementations.
+    arch_forward_host = get_forward_host(arch) if softmax_impl is None else None
     requested_num_splits = num_splits
     if (
         not fake_mode
@@ -1299,6 +1441,8 @@ def _flash_attn_fwd(
         batch_invariant,
         fa_logging.get_fa_log_level(),
     )
+    if softmax_key is not None:
+        compile_key += (("softmax_impl", softmax_key),)
 
     if compile_key not in _flash_attn_fwd.compile_cache:
         (
@@ -1426,6 +1570,7 @@ def _flash_attn_fwd(
                 has_bias=bias is not None,
                 bias_block_size=tile_bias,
                 rel_extent_padded=rel_extent_padded,
+                softmax_impl=softmax_impl,
             )
         elif arch // 10 in [10, 11]:
             if qv is not None:

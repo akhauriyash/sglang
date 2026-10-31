@@ -89,6 +89,7 @@ from sglang.srt.configs import (
     Step3p7Config,
     Step3VLConfig,
     XllmConfig,
+    XllmHybridConfig,
 )
 from sglang.srt.configs.deepseek_ocr import DeepseekVLV2Config
 from sglang.srt.configs.deepseek_v41 import DEEPSEEK_V41_CONFIG_CLASSES
@@ -123,6 +124,7 @@ _CONFIG_REGISTRY: Dict[str, Type[PretrainedConfig]] = {
         MultiModalityConfig,
         KimiVLConfig,
         K2HorizonConfig,
+        XllmHybridConfig,
         LocateAnythingConfig,
         InternVLChatConfig,
         LagunaConfig,

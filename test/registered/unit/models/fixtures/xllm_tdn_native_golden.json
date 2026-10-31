@@ -1,0 +1,269 @@
+{
+  "cases": {
+    "nonzero": {
+      "inputs": {
+        "bias": {
+          "dtype": "torch.bfloat16",
+          "sha256": "c282d44fcf2b52ffdac74e91e8106afbfd7eba0bc2c40b06f7af38fc397a40ab",
+          "shape": [
+            1536
+          ]
+        },
+        "prior_count": {
+          "dtype": "torch.int64",
+          "sha256": "1a1be85b0f74b698a4a970c899466f8f1b085a1b5f707e43de0a198fc0b1c7f7",
+          "shape": [
+            1
+          ]
+        },
+        "prior_mean": {
+          "dtype": "torch.float32",
+          "sha256": "b415a4a38de528f2238c8c179dedae7db95525792a5cffe1f32176a621575fe1",
+          "shape": [
+            32
+          ]
+        },
+        "prior_var": {
+          "dtype": "torch.float32",
+          "sha256": "e4bb0e30b0286eed3e1936ede8f439bb9b1166b121daddc0a4c80bb10b53a1b1",
+          "shape": [
+            32
+          ]
+        },
+        "weight": {
+          "dtype": "torch.bfloat16",
+          "sha256": "6c5828d85aea3f7bb41fe1a3cd5639c7fb9b8cd621cffbca106d3afbaf09a3d8",
+          "shape": [
+            1536
+          ]
+        },
+        "x": {
+          "dtype": "torch.bfloat16",
+          "sha256": "a6d8c857beca20afe028d4ad90b383ac594b19b5629f68801ad8219c6f7c0a9d",
+          "shape": [
+            257,
+            1536
+          ]
+        }
+      },
+      "outputs": {
+        "count": {
+          "dtype": "torch.int64",
+          "sample_indices": [
+            0
+          ],
+          "samples": {
+            "0": 1288
+          },
+          "sha256": "7e320cf55b776d29607c614226d142451ee94e597c4a054d31529e5669246b22",
+          "shape": [
+            1
+          ]
+        },
+        "mean": {
+          "dtype": "torch.bfloat16",
+          "sample_indices": [
+            0,
+            16,
+            31
+          ],
+          "samples": {
+            "0": -0.08154296875,
+            "16": 0.0118408203125,
+            "31": 0.099609375
+          },
+          "sha256": "c5ac6d0ad7749a9a903100484e27949919c4767c697b30d3c5e3ca750cee25ed",
+          "shape": [
+            32
+          ]
+        },
+        "output": {
+          "dtype": "torch.bfloat16",
+          "sample_indices": [
+            0,
+            197376,
+            391680,
+            393216,
+            393263,
+            394751
+          ],
+          "samples": {
+            "0": -13.0625,
+            "197376": -0.20703125,
+            "391680": 1.328125,
+            "393216": -0.92578125,
+            "393263": -0.244140625,
+            "394751": 2.390625
+          },
+          "sha256": "3af11de57544a45e0f4ff06c3514592916cb434e5ebd13c15aba9b20aaa0b004",
+          "shape": [
+            257,
+            1536
+          ]
+        },
+        "var": {
+          "dtype": "torch.bfloat16",
+          "sample_indices": [
+            0,
+            16,
+            31
+          ],
+          "samples": {
+            "0": 0.1416015625,
+            "16": 0.1689453125,
+            "31": 0.1953125
+          },
+          "sha256": "f90c7099fd7889ca12042347c1f58bf6f7badadfde3fa421c192f028cd2d39fd",
+          "shape": [
+            32
+          ]
+        }
+      }
+    },
+    "zero": {
+      "inputs": {
+        "bias": {
+          "dtype": "torch.bfloat16",
+          "sha256": "c282d44fcf2b52ffdac74e91e8106afbfd7eba0bc2c40b06f7af38fc397a40ab",
+          "shape": [
+            1536
+          ]
+        },
+        "prior_count": {
+          "dtype": "torch.int64",
+          "sha256": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+          "shape": [
+            1
+          ]
+        },
+        "prior_mean": {
+          "dtype": "torch.float32",
+          "sha256": "38723a2e5e8a17aa7950dc008209944e898f69a7bd10a23c839d341e935fd5ca",
+          "shape": [
+            32
+          ]
+        },
+        "prior_var": {
+          "dtype": "torch.float32",
+          "sha256": "38723a2e5e8a17aa7950dc008209944e898f69a7bd10a23c839d341e935fd5ca",
+          "shape": [
+            32
+          ]
+        },
+        "weight": {
+          "dtype": "torch.bfloat16",
+          "sha256": "6c5828d85aea3f7bb41fe1a3cd5639c7fb9b8cd621cffbca106d3afbaf09a3d8",
+          "shape": [
+            1536
+          ]
+        },
+        "x": {
+          "dtype": "torch.bfloat16",
+          "sha256": "a6d8c857beca20afe028d4ad90b383ac594b19b5629f68801ad8219c6f7c0a9d",
+          "shape": [
+            257,
+            1536
+          ]
+        }
+      },
+      "outputs": {
+        "count": {
+          "dtype": "torch.int64",
+          "sample_indices": [
+            0
+          ],
+          "samples": {
+            "0": 257
+          },
+          "sha256": "4adeb4453cb2e0d4f186667f3052bf6c34b102cf0fa25910f6964f4f8a55ab84",
+          "shape": [
+            1
+          ]
+        },
+        "mean": {
+          "dtype": "torch.bfloat16",
+          "sample_indices": [
+            0,
+            16,
+            31
+          ],
+          "samples": {
+            "0": -4.839897155761719e-05,
+            "16": -2.7418136596679688e-05,
+            "31": 4.076957702636719e-05
+          },
+          "sha256": "7aea441650d73e78bc71a40e9ebdd97477f8e09424b24c2cf821227949fce734",
+          "shape": [
+            32
+          ]
+        },
+        "output": {
+          "dtype": "torch.bfloat16",
+          "sample_indices": [
+            0,
+            197376,
+            391680,
+            393216,
+            393263,
+            394751
+          ],
+          "samples": {
+            "0": -1.46875,
+            "197376": -0.0595703125,
+            "391680": 0.55859375,
+            "393216": -0.4921875,
+            "393263": -0.1708984375,
+            "394751": 1.359375
+          },
+          "sha256": "26d47be8002564ba8bcf8b90e3135bc0de0c9f16699bca4192c6b71fcdffcc07",
+          "shape": [
+            257,
+            1536
+          ]
+        },
+        "var": {
+          "dtype": "torch.bfloat16",
+          "sample_indices": [
+            0,
+            16,
+            31
+          ],
+          "samples": {
+            "0": 0.1357421875,
+            "16": 0.1357421875,
+            "31": 0.1357421875
+          },
+          "sha256": "e112b269f75c8387b650e726a38b5612a2bdcad77b68525492ba4fa26c8c9653",
+          "shape": [
+            32
+          ]
+        }
+      }
+    }
+  },
+  "format_version": 1,
+  "operator": "group_timestep_decay_norm_cub_fwd",
+  "parameters": {
+    "beta1": 0.999,
+    "beta2": 0.9999,
+    "eps": 1e-05
+  },
+  "provenance": {
+    "compute_capability": [
+      9,
+      0
+    ],
+    "cuda": "12.8",
+    "expectations": "Unchanged native extension; no port operator or model checkpoint",
+    "gpu": "NVIDIA H200",
+    "native_extension_sha256": "30dd4cfbb2b3a2af2fc514b938ebc01f40487609b6756f740d8679e53f9f859f",
+    "native_repository_revision": "d39bfea6472fd960e355fa370c94c557cbc68fd7",
+    "native_source_sha256": {
+      "xllm/csrc/ops/timestep_decay_norm_cub_kernel.cu": "1869b01fa58333e99ebc870b997089ccabee5d9926a198bc3c44b19e9cb24122",
+      "xllm/csrc/welford.h": "9c5ae63fc3d1ac5be3f5b1e678c20c638440b829d6aea03b6778bfa036c7e0a1"
+    },
+    "torch": "2.11.0+cu128"
+  },
+  "recipe_version": 1,
+  "scope": "Finite NVIDIA CUDA BF16, 32 groups of 48 channels, 256-token native scan blocks"
+}

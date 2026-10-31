@@ -4,7 +4,8 @@ reference loop that MambaPool.clear_slots / copy_from fall back to.
 
 Covers heterogeneous conv shapes, single- and multi-layer pools, single /
 partial / full index sets, int32 indices, and the strided per-slot-envelope
-layout used by page-major / unified pools.
+layout used by page-major / unified pools. Multi-million-element slots exercise
+feature tiling without expanding the statically unrolled kernel body.
 
 Runs on whichever Triton-capable accelerator is present, not CUDA only: the
 descriptor packs ``data_ptr()`` values, which only overflows off CUDA (#35047).
@@ -13,7 +14,6 @@ descriptor packs ``data_ptr()`` values, which only overflows off CUDA (#35047).
 import unittest
 
 import torch
-
 from sglang.srt.mem_cache.mamba_slot_fused import (
     build_conv_slot_descriptor,
     fused_clear_conv_slots,
@@ -22,7 +22,6 @@ from sglang.srt.mem_cache.mamba_slot_fused import (
 from sglang.srt.utils import get_device
 from sglang.srt.utils.common import get_device_module
 from sglang.test.ci.ci_register import register_cuda_ci, register_xpu_ci
-from sglang.test.test_utils import CustomTestCase
 
 register_cuda_ci(est_time=10, stage="base-b", runner_config="1-gpu-small")
 register_xpu_ci(est_time=20, suite="stage-b-test-1-gpu-xpu")
@@ -106,7 +105,80 @@ def _ref_copy(convs, src, dst):
     DEVICE is not None,
     f"fused conv-slot kernels need one of {TRITON_DEVICES}",
 )
-class TestMambaSlotFused(CustomTestCase):
+class TestMambaSlotFused(unittest.TestCase):
+    def test_large_heterogeneous_slots(self):
+        # Recurrent attention may retain two 4096-token chunks with 512
+        # features, alongside ordinary short-conv histories. The extra tail
+        # catches masking in the last feature tile; two layers and selected
+        # slots exercise all three launch axes.
+        dev = DEVICE
+        shapes = [(3, 128), (1, 32769), (1, 8192 * 512 + 17)]
+        generator = torch.Generator(device=dev).manual_seed(17)
+        base = [
+            torch.randn(
+                2, 4, *shape, dtype=torch.bfloat16, device=dev, generator=generator
+            )
+            for shape in shapes
+        ]
+        src = torch.tensor([0, 2], dtype=torch.int32, device=dev)
+        dst = torch.tensor([1, 3], dtype=torch.int32, device=dev)
+        for operation in ("clear", "copy"):
+            with self.subTest(operation=operation):
+                ref = [tensor.clone() for tensor in base]
+                got = [tensor.clone() for tensor in base]
+                descriptor = build_conv_slot_descriptor(got)
+                if operation == "clear":
+                    _ref_clear(ref, dst.long())
+                    fused_clear_conv_slots(descriptor, dst)
+                else:
+                    _ref_copy(ref, src.long(), dst.long())
+                    fused_copy_conv_slots(descriptor, src, dst)
+                get_device_module().synchronize()
+                for expected, actual in zip(ref, got):
+                    self.assertTrue(torch.equal(expected, actual))
+
+    def test_large_strided_envelope(self):
+        dev = DEVICE
+        dims, layers, slots = [17, 1400001], 2, 4
+        envelope = sum(CONV_LEN * dim for dim in dims) + 23
+        generator = torch.Generator(device=dev).manual_seed(18)
+        base = torch.randn(
+            layers,
+            slots,
+            envelope,
+            dtype=torch.bfloat16,
+            device=dev,
+            generator=generator,
+        )
+        src = torch.tensor([0, 2], dtype=torch.int64, device=dev)
+        dst = torch.tensor([1, 3], dtype=torch.int64, device=dev)
+        for operation in ("clear", "copy"):
+            with self.subTest(operation=operation):
+                ref, got = base.clone(), base.clone()
+                ref_views = _envelope_views(ref, dims, layers, slots)
+                got_views = _envelope_views(got, dims, layers, slots)
+                self.assertFalse(got_views[0].is_contiguous())
+                descriptor = build_conv_slot_descriptor(got_views)
+                if operation == "clear":
+                    _ref_clear(ref_views, dst)
+                    fused_clear_conv_slots(descriptor, dst)
+                else:
+                    _ref_copy(ref_views, src, dst)
+                    fused_copy_conv_slots(descriptor, src, dst)
+                get_device_module().synchronize()
+                # Check the entire envelope, including padding and other streams.
+                self.assertTrue(torch.equal(ref, got))
+
+    def test_empty_feature_stream_is_noop(self):
+        tensor = torch.empty((2, 4, 0), device=DEVICE, dtype=torch.bfloat16)
+        descriptor = build_conv_slot_descriptor([tensor])
+        src = torch.tensor([0], device=DEVICE, dtype=torch.int64)
+        dst = torch.tensor([1], device=DEVICE, dtype=torch.int64)
+        fused_clear_conv_slots(descriptor, dst)
+        fused_copy_conv_slots(descriptor, src, dst)
+        get_device_module().synchronize()
+        self.assertEqual(tensor.numel(), 0)
+
     def test_clear_matches_reference(self):
         dev = DEVICE
         for dims, num_layers, pool in CONFIGS:

@@ -18,15 +18,17 @@ only requires the per-slot feature block to be contiguous. Temporal state
 
 from __future__ import annotations
 
-from typing import List, NamedTuple
+from typing import NamedTuple
 
 import torch
 import triton
 import triton.language as tl
-
 from sglang.kernels.ops.memory.ptr_table import make_ptr_table
 
 _BLOCK = 1024
+# Keep the existing one-program-per-slot path for ordinary short convolutions,
+# but bound static unrolling when a stream stores a much larger recurrent state.
+_MAX_BLOCKS_PER_PROGRAM = 32
 
 
 class ConvSlotDescriptor(NamedTuple):
@@ -45,10 +47,12 @@ def _fused_slot_clear_kernel(
     layer_stride_arr,
     slot_stride_arr,
     index_arr,
-    MAX_FEAT_BLOCKS: tl.constexpr,
+    FEAT_TILES: tl.constexpr,
+    BLOCKS_PER_PROGRAM: tl.constexpr,
     BLOCK: tl.constexpr,
 ):
-    iid = tl.program_id(0)
+    iid = tl.program_id(0) // FEAT_TILES
+    tile = tl.program_id(0) % FEAT_TILES
     tid = tl.program_id(1)
     lid = tl.program_id(2)
     base_addr = tl.load(ptr_arr + tid)
@@ -61,9 +65,10 @@ def _fused_slot_clear_kernel(
         + slot * tl.load(slot_stride_arr + tid)
     )
     zeros = tl.zeros((BLOCK,), dtype=tl.bfloat16)
-    for fb in tl.static_range(MAX_FEAT_BLOCKS):
-        cols = fb * BLOCK + tl.arange(0, BLOCK)
-        tl.store(row + cols, zeros, mask=cols < feat)
+    if tile * BLOCKS_PER_PROGRAM * BLOCK < feat:
+        for fb in tl.static_range(BLOCKS_PER_PROGRAM):
+            cols = (tile * BLOCKS_PER_PROGRAM + fb) * BLOCK + tl.arange(0, BLOCK)
+            tl.store(row + cols, zeros, mask=cols < feat)
 
 
 @triton.jit
@@ -74,10 +79,12 @@ def _fused_slot_copy_kernel(
     slot_stride_arr,
     src_arr,
     dst_arr,
-    MAX_FEAT_BLOCKS: tl.constexpr,
+    FEAT_TILES: tl.constexpr,
+    BLOCKS_PER_PROGRAM: tl.constexpr,
     BLOCK: tl.constexpr,
 ):
-    iid = tl.program_id(0)
+    iid = tl.program_id(0) // FEAT_TILES
+    tile = tl.program_id(0) % FEAT_TILES
     tid = tl.program_id(1)
     lid = tl.program_id(2)
     base_addr = tl.load(ptr_arr + tid)
@@ -87,13 +94,14 @@ def _fused_slot_copy_kernel(
     base = base_addr.to(tl.pointer_type(tl.bfloat16))
     src_row = base + layer_off + tl.load(src_arr + iid) * slot_stride
     dst_row = base + layer_off + tl.load(dst_arr + iid) * slot_stride
-    for fb in tl.static_range(MAX_FEAT_BLOCKS):
-        cols = fb * BLOCK + tl.arange(0, BLOCK)
-        mask = cols < feat
-        tl.store(dst_row + cols, tl.load(src_row + cols, mask=mask), mask=mask)
+    if tile * BLOCKS_PER_PROGRAM * BLOCK < feat:
+        for fb in tl.static_range(BLOCKS_PER_PROGRAM):
+            cols = (tile * BLOCKS_PER_PROGRAM + fb) * BLOCK + tl.arange(0, BLOCK)
+            mask = cols < feat
+            tl.store(dst_row + cols, tl.load(src_row + cols, mask=mask), mask=mask)
 
 
-def build_conv_slot_descriptor(tensors: List[torch.Tensor]) -> ConvSlotDescriptor:
+def build_conv_slot_descriptor(tensors: list[torch.Tensor]) -> ConvSlotDescriptor:
     """Build the pool-stable addressing descriptor for a conv-tensor list.
 
     Requires bf16 tensors sharing the leading (num_layers, pool_size) dims with a
@@ -129,18 +137,22 @@ def build_conv_slot_descriptor(tensors: List[torch.Tensor]) -> ConvSlotDescripto
 
 def fused_clear_conv_slots(desc: ConvSlotDescriptor, indices: torch.Tensor):
     """Zero ``indices`` slots (dim 1) across every conv tensor in one launch."""
-    if desc.ptr.numel() == 0 or indices.numel() == 0:
+    if desc.ptr.numel() == 0 or indices.numel() == 0 or desc.max_feat_blocks == 0:
         return
     index_arr = indices.to(torch.int64)
-    # Slot count on the unbounded grid axis (gridDim.y/z cap at 65535).
-    grid = (index_arr.numel(), desc.ptr.numel(), desc.num_layers)
+    blocks_per_program = min(desc.max_feat_blocks, _MAX_BLOCKS_PER_PROGRAM)
+    feat_tiles = triton.cdiv(desc.max_feat_blocks, blocks_per_program)
+    # Slot count and feature tiles share the unbounded grid axis (y/z cap at
+    # 65535). Large slots must not expand the statically unrolled kernel body.
+    grid = (index_arr.numel() * feat_tiles, desc.ptr.numel(), desc.num_layers)
     _fused_slot_clear_kernel[grid](
         desc.ptr,
         desc.feat,
         desc.layer_stride,
         desc.slot_stride,
         index_arr,
-        MAX_FEAT_BLOCKS=desc.max_feat_blocks,
+        FEAT_TILES=feat_tiles,
+        BLOCKS_PER_PROGRAM=blocks_per_program,
         BLOCK=_BLOCK,
     )
 
@@ -156,11 +168,13 @@ def fused_copy_conv_slots(
     reference, this kernel reads and writes in one pass, so overlapping ranges
     would race.
     """
-    if desc.ptr.numel() == 0 or src_indices.numel() == 0:
+    if desc.ptr.numel() == 0 or src_indices.numel() == 0 or desc.max_feat_blocks == 0:
         return
     src_arr = src_indices.to(torch.int64)
     dst_arr = dst_indices.to(torch.int64)
-    grid = (src_arr.numel(), desc.ptr.numel(), desc.num_layers)
+    blocks_per_program = min(desc.max_feat_blocks, _MAX_BLOCKS_PER_PROGRAM)
+    feat_tiles = triton.cdiv(desc.max_feat_blocks, blocks_per_program)
+    grid = (src_arr.numel() * feat_tiles, desc.ptr.numel(), desc.num_layers)
     _fused_slot_copy_kernel[grid](
         desc.ptr,
         desc.feat,
@@ -168,6 +182,7 @@ def fused_copy_conv_slots(
         desc.slot_stride,
         src_arr,
         dst_arr,
-        MAX_FEAT_BLOCKS=desc.max_feat_blocks,
+        FEAT_TILES=feat_tiles,
+        BLOCKS_PER_PROGRAM=blocks_per_program,
         BLOCK=_BLOCK,
     )

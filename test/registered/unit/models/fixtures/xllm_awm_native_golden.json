@@ -1,0 +1,152 @@
+{
+  "format_version": 1,
+  "inputs": {
+    "feature_keys": {
+      "dtype": "torch.bfloat16",
+      "sha256": "ee777098ad9531548c78ce62e53b3cb90c8fa24577acebff9d620e9cc584abba",
+      "shape": [
+        12288,
+        8,
+        64
+      ]
+    },
+    "query": {
+      "dtype": "torch.bfloat16",
+      "sha256": "77a99ac7917e2b99f4bf16497fa5066714558e3535218e14f1ffd1c0f8f280bf",
+      "shape": [
+        12288,
+        32,
+        64
+      ]
+    },
+    "raw_keys": {
+      "dtype": "torch.bfloat16",
+      "sha256": "e6425f9b5cfdbcac08c99e784127a2d020f9ea43f76e3252f98cca04990b1354",
+      "shape": [
+        12288,
+        8,
+        64
+      ]
+    },
+    "values": {
+      "dtype": "torch.bfloat16",
+      "sha256": "6c970d0a4992ca694cdd6dc3037dfa180a911c3c04d9ee75845323202b7e6e5a",
+      "shape": [
+        12288,
+        8,
+        64
+      ]
+    }
+  },
+  "operator": "_adaptive_working_memory_fwd",
+  "outputs": {
+    "log_normalizer": {
+      "dtype": "torch.float32",
+      "sample_indices": [
+        0,
+        256,
+        384,
+        511
+      ],
+      "samples": {
+        "0": 10.928661346435547,
+        "256": 10.93039608001709,
+        "384": 10.93038272857666,
+        "511": 10.927440643310547
+      },
+      "sha256": "2ad286e077cdc11a7785f373835ca0f10d98a009c3f25849641d70544f79cfa3",
+      "shape": [
+        8,
+        64
+      ]
+    },
+    "mask": {
+      "dtype": "torch.bool",
+      "sample_indices": [
+        0,
+        6144,
+        9216,
+        12287
+      ],
+      "samples": {
+        "0": true,
+        "12287": false,
+        "6144": true,
+        "9216": false
+      },
+      "sha256": "9cd81ff42069d747b195786c9aa84943b58b12d1ef4b28bb76ace66404cfd35c",
+      "shape": [
+        12288
+      ]
+    },
+    "memory": {
+      "dtype": "torch.bfloat16",
+      "sample_indices": [
+        0,
+        16384,
+        24576,
+        32767
+      ],
+      "samples": {
+        "0": -0.014892578125,
+        "16384": -0.031494140625,
+        "24576": -0.01092529296875,
+        "32767": -0.0302734375
+      },
+      "sha256": "a97185b1f831a5815748839c41384fde87c59a5e4df0ddf53c033c65d159003a",
+      "shape": [
+        8,
+        64,
+        64
+      ]
+    },
+    "output": {
+      "dtype": "torch.bfloat16",
+      "sample_indices": [
+        0,
+        12582912,
+        18874368,
+        25165823
+      ],
+      "samples": {
+        "0": 0.0,
+        "12582912": 0.0,
+        "18874368": 0.0047607421875,
+        "25165823": 0.009765625
+      },
+      "sha256": "2eef511e487e406f75db6154a1123fe0dbc50a8baccb1b77f655ab497507f75b",
+      "shape": [
+        12288,
+        32,
+        64
+      ]
+    }
+  },
+  "parameters": {
+    "chunk_size": 4096,
+    "chunks": 3,
+    "head_dim": 64,
+    "kv_heads": 8,
+    "query_heads": 32
+  },
+  "provenance": {
+    "allow_tf32": false,
+    "capture_script_sha256": "42449ba17616d3a8333166fe8f240827b1e316a8dd834d1585acce87dc424007",
+    "compute_capability": [
+      9,
+      0
+    ],
+    "cuda": "12.8",
+    "expectations": "Untouched native forward only; no port outputs or checkpoint data",
+    "gpu": "NVIDIA H200",
+    "native_repository_revision": "d39bfea6472fd960e355fa370c94c557cbc68fd7",
+    "native_source_sha256": {
+      "xllm/modules/fused_ops/adaptive_working_memory.py": "25ac95ca5f48ff8d0295fd182295c1fa76af78095b179c5091f7d2a71af8d42b",
+      "xllm/modules/fused_ops/utils.py": "0c0b3498d23016cf67243b829964c655a8b69dff82b7e72baddd1f22164c3803"
+    },
+    "native_sources_unchanged": true,
+    "torch": "2.11.0+cu128"
+  },
+  "recipe_version": 1,
+  "scope": "SM90 BF16, unsegmented zero-state, 3 whole chunks; FP32 final normalizer"
+}

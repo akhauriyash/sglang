@@ -522,8 +522,10 @@ def attn_backend_wrapper(runner: "ModelRunner", full_attn_backend: "AttentionBac
         else:
             spec_result = get_linear_attn_config(runner.model_config.hf_config)
             if spec_result is not None:
-                spec, _ = spec_result
-                cfg = runner.model_config
+                # The registry may unwrap a multimodal config. Its returned
+                # config owns the layer mapping; ModelConfig does not expose
+                # full_attention_layer_ids for every registered hybrid.
+                spec, cfg = spec_result
                 BackendClass = import_backend_class(spec.backend_class_name)
                 linear_attn_backend = BackendClass(runner)
                 if spec.hybrid_backend_class_name is not None:
